@@ -18,6 +18,7 @@ wire [4:0] new_tail_2 = (copy2.core.rob._com_idx_T & ((copy2.core.rob.rob_tail !
 reg stall_1, stall_2, finish_1, finish_2, commit_deviation, addr_deviation, invalid_program;
 reg init;
 // Shadow Logic for CT Contract
+// 这里的设计表示有32个rob条目
 reg [63:0] rs1_data_1 [31:0];
 reg [63:0] rs1_data_2 [31:0];
 reg [63:0] rs2_data_1 [31:0];
