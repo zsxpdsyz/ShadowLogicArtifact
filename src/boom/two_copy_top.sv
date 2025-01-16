@@ -46,6 +46,7 @@ always @(posedge clk) begin
         is_mem_2 <= 0;
     end
     else begin
+        // 通过观察rob tail条目中的uop来展示指令的类型
         if (copy1.core.rob.io_enq_valids_0) begin
             is_br_1[copy1.core.rob.rob_tail] <= copy1.core.rob.io_enq_uops_0_is_br;
             is_jalr_1[copy1.core.rob.rob_tail] <= copy1.core.rob.io_enq_uops_0_is_jalr;
