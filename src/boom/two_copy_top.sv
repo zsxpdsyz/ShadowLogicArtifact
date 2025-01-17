@@ -11,7 +11,7 @@ module top(
     input clk,
     input rst
 );
-
+// 32个rob条目需要5位来表示
 reg [4:0] ROB_tail_1, ROB_tail_2;
 wire [4:0] new_tail_1 = (copy1.core.rob._com_idx_T & 
             ((copy1.core.rob.rob_tail !== copy1.core.rob.rob_head) | copy1.core.rob.maybe_full)) ? 
@@ -34,6 +34,16 @@ reg [31:0] is_br_1, is_br_2, is_jalr_1, is_jalr_2, is_muldiv_1, is_muldiv_2, is_
 
 // ISA observations
 // For branch and muldiv, compare both rs1 and rs2; for jalr, only compare rs1
+// 对于sandbox合约：不能把秘密数据加载到寄存器中。这里使用rob debug head中的写入寄存器中的值作为判定标准。
+/** 
+对于constant-time合约：不能有依赖秘密数据的分支和依赖秘密数据的地址访问。
+具体到代码中的实现是：
+1. 如果rob head的指令是branch指令或者muldiv指令，那么他们源寄存器1和2的内容都不能相等；
+2. 如果rob head指令是jalr指令，那么他们源寄存器1中的内容不能相同；
+3. 如果是内存相关的指令，那么他们的内存操作的目标地址不能相同。
+**/
+// 这里比较的都是rob head中将要提交的地址。和判断是否产生uarch差异所使用的内存地址是不同时期的，
+// （它那个阶段使用的是当前时刻的所要访问的内存地址，也就是即时的，一旦发现差异就立刻表示发生微架构差异）
 wire isa_deviation = (`CONTRACT == `SANDBOX) ? (copy1.core.rob.rob_head_wdata != copy2.core.rob.rob_head_wdata)
                     : (`CONTRACT == `CT) ? ((is_br_1[copy1.core.rob.rob_head] || is_muldiv_1[copy1.core.rob.rob_head]) && (rs1_data_1[copy1.core.rob.rob_head]!=rs1_data_2[copy2.core.rob.rob_head] || rs2_data_1[copy1.core.rob.rob_head]!=rs2_data_2[copy2.core.rob.rob_head]))
                                         || (is_jalr_1[copy1.core.rob.rob_head] && (rs1_data_1[copy1.core.rob.rob_head]!=rs1_data_2[copy2.core.rob.rob_head]))
@@ -64,7 +74,7 @@ always @(posedge clk) begin
             is_muldiv_2[copy2.core.rob.rob_tail] <= 0;
             is_mem_2[copy2.core.rob.rob_tail] <= 0;
         end
-        // 提取寄存器中的值和mem操作的目标内存地址
+        // 提取寄存器中的值和mem操作的目标内存地址；并且以rob的id数作为该寄存器位的索引
         if (copy1.core.csr_exe_unit.alu.io_req_valid && (copy1.core.csr_exe_unit.alu.io_req_bits_uop_is_br || copy1.core.csr_exe_unit.alu.io_req_bits_uop_is_jalr)) begin
             rs1_data_1[copy1.core.csr_exe_unit.alu.io_req_bits_uop_rob_idx] <= copy1.core.csr_exe_unit.alu.io_req_bits_rs1_data;
             rs2_data_1[copy1.core.csr_exe_unit.alu.io_req_bits_uop_rob_idx] <= copy1.core.csr_exe_unit.alu.io_req_bits_rs2_data;
@@ -200,6 +210,7 @@ always @(posedge clk) begin
             stall_1 <= 1;
             commit_deviation <= 1;
             // 如果没有微架构上的差异，那么需要将tail的内容提取出来
+            // (但下面这个分支逻辑上永远也不会被执行)
             if (!(commit_deviation || addr_deviation)) begin
                 ROB_tail_1 <= copy1.core.rob.rob_tail;
                 ROB_tail_2 <= copy2.core.rob.rob_tail;
@@ -228,6 +239,7 @@ always @(posedge clk) begin
         end
 
         // Memory address deviation
+        // 如果访问的内存地址不同，需要将addr_deviation置为1。并记录此时rob tail的位置
         if (!commit_deviation && addr1 != addr2 && !addr_deviation) begin
             addr_deviation <= 1;
             ROB_tail_1 <= copy1.core.rob.rob_tail;
@@ -241,6 +253,7 @@ always @(posedge clk) begin
             ROB_tail_2 <= new_tail_2;
 
         // Drain the ROB
+        // 如果发生了提交差异或者地址差异，而且rob已经将ROB_tail中记录的指令完成提交，那么表示已完成执行
         if ((commit_deviation || addr_deviation) && (commit1 && copy1.core.rob.rob_head==ROB_tail_1-1 || copy1.core.rob.rob_head >= ROB_tail_1))
             finish_1 <= 1;
         if ((commit_deviation || addr_deviation) && (commit2 && copy2.core.rob.rob_head==ROB_tail_2-1 || copy2.core.rob.rob_head >= ROB_tail_2))

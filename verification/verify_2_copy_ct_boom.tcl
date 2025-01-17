@@ -12,6 +12,7 @@ assume {invalid_program==0}
 assume {copy1.core.csr.reg_mstatus_prv==2'b11 && copy2.core.csr.reg_mstatus_prv==2'b11}
 
 # Abstract Icache data array
+# 这里约束所有ICache中mem的内容都一样，且每次访问必须是hit的，实际上就是约束了执行的指令是完全相同的
 abstract -init_value {copy1.frontend.icache.dataArrayWay_0.dataArrayWay_0_ext.mem_0_0.ram}
 abstract -init_value {copy2.frontend.icache.dataArrayWay_0.dataArrayWay_0_ext.mem_0_0.ram}
 assume {copy1.frontend.icache.dataArrayWay_0.dataArrayWay_0_ext.mem_0_0.ram==copy2.frontend.icache.dataArrayWay_0.dataArrayWay_0_ext.mem_0_0.ram && copy1.frontend.icache.dataArrayWay_1.dataArrayWay_0_ext.mem_0_0.ram==copy2.frontend.icache.dataArrayWay_1.dataArrayWay_0_ext.mem_0_0.ram}
