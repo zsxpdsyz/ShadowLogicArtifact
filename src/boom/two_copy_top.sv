@@ -13,7 +13,12 @@ module top(
 );
 
 reg [4:0] ROB_tail_1, ROB_tail_2;
-wire [4:0] new_tail_1 = (copy1.core.rob._com_idx_T & ((copy1.core.rob.rob_tail !== copy1.core.rob.rob_head) | copy1.core.rob.maybe_full)) ? copy1.core.rob._rob_tail_T_1 : (~(copy1.core.rob._com_idx_T & copy1.core.rob._full_T & copy1.core.rob._finished_committing_row_T_6) ? (copy1.core.rob.io_brupdate_b2_mispredict ? copy1.core.rob._rob_tail_T_4 : copy1.core.rob._GEN_11100) : copy1.core.rob.rob_tail);
+wire [4:0] new_tail_1 = (copy1.core.rob._com_idx_T & 
+            ((copy1.core.rob.rob_tail !== copy1.core.rob.rob_head) | copy1.core.rob.maybe_full)) ? 
+            copy1.core.rob._rob_tail_T_1 : 
+            (~(copy1.core.rob._com_idx_T & copy1.core.rob._full_T & copy1.core.rob._finished_committing_row_T_6) ? 
+            (copy1.core.rob.io_brupdate_b2_mispredict ? copy1.core.rob._rob_tail_T_4 : 
+            copy1.core.rob._GEN_11100) : copy1.core.rob.rob_tail);
 wire [4:0] new_tail_2 = (copy2.core.rob._com_idx_T & ((copy2.core.rob.rob_tail !== copy2.core.rob.rob_head) | copy2.core.rob.maybe_full)) ? copy2.core.rob._rob_tail_T_1 : (~(copy2.core.rob._com_idx_T & copy2.core.rob._full_T & copy2.core.rob._finished_committing_row_T_6) ? (copy2.core.rob.io_brupdate_b2_mispredict ? copy2.core.rob._rob_tail_T_4 : copy2.core.rob._GEN_11100) : copy2.core.rob.rob_tail);
 reg stall_1, stall_2, finish_1, finish_2, commit_deviation, addr_deviation, invalid_program;
 reg init;
@@ -46,7 +51,7 @@ always @(posedge clk) begin
         is_mem_2 <= 0;
     end
     else begin
-        // 通过观察rob tail条目中的uop来展示指令的类型
+        // 通过观察rob tail条目中的uop来提取指令的类型
         if (copy1.core.rob.io_enq_valids_0) begin
             is_br_1[copy1.core.rob.rob_tail] <= copy1.core.rob.io_enq_uops_0_is_br;
             is_jalr_1[copy1.core.rob.rob_tail] <= copy1.core.rob.io_enq_uops_0_is_jalr;
@@ -59,6 +64,7 @@ always @(posedge clk) begin
             is_muldiv_2[copy2.core.rob.rob_tail] <= 0;
             is_mem_2[copy2.core.rob.rob_tail] <= 0;
         end
+        // 提取寄存器中的值和mem操作的目标内存地址
         if (copy1.core.csr_exe_unit.alu.io_req_valid && (copy1.core.csr_exe_unit.alu.io_req_bits_uop_is_br || copy1.core.csr_exe_unit.alu.io_req_bits_uop_is_jalr)) begin
             rs1_data_1[copy1.core.csr_exe_unit.alu.io_req_bits_uop_rob_idx] <= copy1.core.csr_exe_unit.alu.io_req_bits_rs1_data;
             rs2_data_1[copy1.core.csr_exe_unit.alu.io_req_bits_uop_rob_idx] <= copy1.core.csr_exe_unit.alu.io_req_bits_rs2_data;
@@ -171,6 +177,7 @@ BoomTile copy2 (
 
 wire commit1 = copy1.core.rob.io_commit_valids_0;
 wire commit2 = copy2.core.rob.io_commit_valids_0;
+// LSU模块向DCache发出的数据请求的地址
 wire [39:0] addr1 = copy1.lsu.io_dmem_req_bits_0_bits_addr;
 wire [39:0] addr2 = copy2.lsu.io_dmem_req_bits_0_bits_addr;
 // Shadow Logic
@@ -188,14 +195,17 @@ always @(posedge clk) begin
             if (isa_deviation)
                 invalid_program <= 1;
         end
+        // 如果两个模型都没有stall且commit1首先提交了，那么此时要阻塞cpu1，且说明他们在微架构上产生了差异
         else if (!stall_1 && !stall_2 && commit1 && !commit2) begin
             stall_1 <= 1;
             commit_deviation <= 1;
+            // 如果没有微架构上的差异，那么需要将tail的内容提取出来
             if (!(commit_deviation || addr_deviation)) begin
                 ROB_tail_1 <= copy1.core.rob.rob_tail;
                 ROB_tail_2 <= copy2.core.rob.rob_tail;
             end
         end
+        // 和上一条相反的情况
         else if (!stall_1 && !stall_2 && !commit1 && commit2) begin
             stall_2 <= 1;
             commit_deviation <= 1;
@@ -204,11 +214,13 @@ always @(posedge clk) begin
                 ROB_tail_2 <= copy2.core.rob.rob_tail;
             end
         end
+        // 如果cpu1被阻塞，且cpu2没有被阻塞但是commit2提交了。此时需要解除cpu1的阻塞
         else if (stall_1 && !stall_2 && commit2) begin
             if (isa_deviation)
                 invalid_program <= 1;
             stall_1 <= 0;
         end
+        // 和上一条相反的情况
         else if (!stall_1 && stall_2 && commit1) begin
             if (isa_deviation)
                 invalid_program <= 1;
